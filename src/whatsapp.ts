@@ -9,6 +9,7 @@ import pino from "pino";
 import qrcode from "qrcode-terminal";
 import { config } from "./config";
 import { processMessage } from "./brain";
+import { isRateLimitError } from "./ai";
 
 const logger = pino({ level: "silent" });
 let currentSocketToken = 0;
@@ -216,11 +217,17 @@ export async function connectWhatsApp() {
         await sock.sendMessage(chatId, { text: `*Jarvis:*\n\n${reply}` });
         console.log(`Jarvis: ${reply}`);
       } catch (error) {
-        console.error("Error processing message:", error);
+        if (isRateLimitError(error)) {
+          console.warn("AI rate limited after retries.");
+        } else {
+          console.error("Error processing message:", error);
+        }
         if (isConnected) {
           try {
             await sock.sendMessage(chatId, {
-              text: "Oops, something went wrong. Try again later.",
+              text: isRateLimitError(error)
+                ? "Tô com muito acesso agora, tenta de novo em alguns segundos."
+                : "Oops, something went wrong. Try again later.",
             });
           } catch (sendError) {
             console.warn("Failed to send error message:", (sendError as any)?.message || sendError);

@@ -10,9 +10,13 @@ const openai = new OpenAI({
   },
 });
 
+export function isRateLimitError(err: unknown): boolean {
+  return (err as any)?.status === 429;
+}
+
 export async function generateResponse(
   messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[],
-  retries = 3,
+  retries = 5,
   delayMs = 1000
 ): Promise<string> {
   for (let attempt = 1; attempt <= retries; attempt++) {
@@ -40,11 +44,13 @@ export async function generateResponse(
       }
       return content;
     } catch (err: any) {
-      if (err?.status === 429 && attempt < retries) {
+      if (isRateLimitError(err) && attempt < retries) {
         const resetHeader = err?.headers?.get?.("x-ratelimit-reset");
+        const exponentialBackoff = delayMs * Math.pow(2, attempt - 1);
+        const jitterMs = Math.floor(Math.random() * 500);
         const waitMs = resetHeader
           ? Math.max(Number(resetHeader) - Date.now(), 0) + 500
-          : delayMs * attempt;
+          : exponentialBackoff + jitterMs;
         console.warn(`Rate limited. Retrying in ${(waitMs / 1000).toFixed(1)}s... (attempt ${attempt}/${retries})`);
         await new Promise((res) => setTimeout(res, waitMs));
         continue;
