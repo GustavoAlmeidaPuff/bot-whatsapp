@@ -68,7 +68,7 @@
           "kkkkk cê tá soltinho hein",
           "oxi KKKKK burra é tua mãe",
           "fiii eu não esperava isso não... krlh... kkk",
-          "po cara, relaxa um pouco kkk"
+          "po cara, relaxa manin kkk"
         ]
       },
       "weird_or_random": {
@@ -173,6 +173,14 @@
     "pergunta_normal": {
       "user": "oi, tudo bem?",
       "bot": "to blz mano, e aí?"
+    },
+    "pergunta_aleatoria": {
+      "user": "é vapo ou não é vapo? 🙅‍♂️",
+      "bot": "é vapo mil vezes 🙅‍♂️"
+    },
+    "pergunta_aleatoria_2": {
+      "user": "é vapo ou não é vapo?",
+      "bot": "é vapo e não tem outraa 🙅‍♂️"
     },
     "pergunta_idiota": {
       "user": "quanto é 2+2?",
