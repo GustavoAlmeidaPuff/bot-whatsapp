@@ -7,10 +7,22 @@ import makeWASocket, {
 } from "@whiskeysockets/baileys";
 import pino from "pino";
 import qrcode from "qrcode-terminal";
+import https from "https";
 import { config } from "./config";
 import { processMessage } from "./brain";
 import { saveMessage, getChatMode, setChatMode } from "./storage";
 import { isRateLimitError, isTransientApiError } from "./ai";
+
+function fetchBuffer(url: string): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    https.get(url, { headers: { "User-Agent": "Mozilla/5.0" } }, (res) => {
+      const chunks: Buffer[] = [];
+      res.on("data", (c: Buffer) => chunks.push(c));
+      res.on("end", () => resolve(Buffer.concat(chunks)));
+      res.on("error", reject);
+    }).on("error", reject);
+  });
+}
 
 const logger = pino({ level: "silent" });
 let currentSocketToken = 0;
@@ -231,7 +243,18 @@ export async function connectWhatsApp() {
       const normalizedText = text.toLowerCase().trim();
 
       if (normalizedText.includes("jarvis, ligar aura")) {
-        await sock.sendMessage(chatId, { text: "https://open.spotify.com/intl-pt/track/6DvGOGRRjhURCE7weXWV3x?si=9c564f36c08f4ae6" });
+        const spotifyUrl = "https://open.spotify.com/intl-pt/track/6DvGOGRRjhURCE7weXWV3x?si=9c564f36c08f4ae6";
+        const jpegThumbnail = await fetchBuffer("https://i.scdn.co/image/ab67616d0000b2734096fd5e8f501c024a70c642").catch(() => undefined);
+        await sock.sendMessage(chatId, {
+          text: spotifyUrl,
+          linkPreview: {
+            "canonical-url": spotifyUrl,
+            "matched-text": spotifyUrl,
+            title: "AURA",
+            description: "Ogryzek · AURA · Música · 2024",
+            ...(jpegThumbnail ? { jpegThumbnail } : {}),
+          },
+        });
         return;
       }
       // ───────────────────────────────────────────────────────────────────────
