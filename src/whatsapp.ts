@@ -9,7 +9,7 @@ import pino from "pino";
 import qrcode from "qrcode-terminal";
 import { config } from "./config";
 import { processMessage } from "./brain";
-import { saveMessage } from "./storage";
+import { saveMessage, getChatMode, setChatMode } from "./storage";
 import { isRateLimitError, isTransientApiError } from "./ai";
 
 const logger = pino({ level: "silent" });
@@ -169,17 +169,20 @@ export async function connectWhatsApp() {
       const msg = messages[0];
       if (!msg.message) return;
 
-      // Ignore own messages
-      if (msg.key.fromMe) return;
-
       // Ignore broadcast
       if (isJidBroadcast(msg.key.remoteJid!)) return;
 
+      const isFromMe = msg.key.fromMe === true;
       const chatId = msg.key.remoteJid!;
-      const senderId = msg.key.participant || msg.key.remoteJid!;
+
+      // For fromMe messages, senderId is the bot's own JID
+      const senderId = isFromMe
+        ? ownJid
+        : (msg.key.participant || msg.key.remoteJid!);
 
       // Ignore mirror LID messages that match the bot's own number
-      if (chatId.endsWith("@lid")) {
+      // (these are duplicate echoes from WhatsApp, not real messages)
+      if (!isFromMe && chatId.endsWith("@lid")) {
         const ownNumber = ownJid.split("@")[0];
         const senderNumber = senderId.split("@")[0];
         if (ownNumber && senderNumber === ownNumber) return;
@@ -187,29 +190,69 @@ export async function connectWhatsApp() {
 
       // Extract text
       const text = extractMessageText(msg.message);
-
       if (!text) return;
-
-      const senderName: string = (msg as any).pushName || senderId.split("@")[0];
-
-      // Save every message to storage so Jarvis has full conversation context,
-      // even for messages not directed at him.
-      saveMessage(chatId, {
-        role: "user",
-        content: text,
-        from: senderId,
-        senderName,
-        timestamp: new Date().toISOString(),
-      });
 
       const isGroup = chatId.includes("@g.us");
       const hasMention = containsJarvisMention(text);
       const repliedToBot = isReplyToBot(msg, ownJid, isGroup);
-      if (!hasMention && !repliedToBot) return;
+
+      // Owner's messages: save to context but only process if directed at Jarvis.
+      // This way the owner can talk to Jarvis by mentioning him or replying to him,
+      // while their other messages are still stored for conversation context.
+      if (isFromMe) {
+        const senderName = "Dono";
+        saveMessage(chatId, {
+          role: "user",
+          content: text,
+          from: senderId,
+          senderName,
+          timestamp: new Date().toISOString(),
+        });
+        if (!hasMention && !repliedToBot) return;
+      } else {
+        const senderName: string = (msg as any).pushName || senderId.split("@")[0];
+        // Save every message to storage so Jarvis has full conversation context,
+        // even for messages not directed at him.
+        saveMessage(chatId, {
+          role: "user",
+          content: text,
+          from: senderId,
+          senderName,
+          timestamp: new Date().toISOString(),
+        });
+        if (!hasMention && !repliedToBot) return;
+      }
 
       console.log(
         `[${isGroup ? "GROUP" : "PRIVATE"}] ${senderId}: ${text} (mention=${hasMention}, replyToBot=${repliedToBot})`
       );
+
+      // ── Mode switching ──────────────────────────────────────────────────────
+      const personality = config.personality as any;
+      const modes = personality.modes ?? {};
+      const normalizedText = text.toLowerCase().trim();
+
+      let modeCommandHandled = false;
+      for (const [modeName, modeDef] of Object.entries(modes) as [string, any][]) {
+        const activationPhrases: string[] = modeDef.activation_phrases ?? [];
+        const deactivationPhrases: string[] = modeDef.deactivation_phrases ?? [];
+
+        if (activationPhrases.some((p: string) => normalizedText.includes(p.toLowerCase()))) {
+          setChatMode(chatId, modeName as any);
+          await sock.sendMessage(chatId, { text: `*Jarvis:*\n\n${modeDef.activation_confirmation}` });
+          modeCommandHandled = true;
+          break;
+        }
+
+        if (deactivationPhrases.some((p: string) => normalizedText.includes(p.toLowerCase()))) {
+          setChatMode(chatId, "default");
+          await sock.sendMessage(chatId, { text: `*Jarvis:*\n\n${modeDef.deactivation_confirmation}` });
+          modeCommandHandled = true;
+          break;
+        }
+      }
+      if (modeCommandHandled) return;
+      // ───────────────────────────────────────────────────────────────────────
 
       try {
         // React with hourglass while thinking

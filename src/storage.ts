@@ -2,6 +2,34 @@ import fs from "fs";
 import path from "path";
 import { config } from "./config";
 
+// ─── Chat Modes ────────────────────────────────────────────────────────────────
+
+export type ChatMode = "default" | "english_training";
+
+function getModesFilePath(): string {
+  return path.join(config.dataDir, "modes.json");
+}
+
+function readModes(): Record<string, ChatMode> {
+  const filePath = getModesFilePath();
+  if (!fs.existsSync(filePath)) return {};
+  try {
+    return JSON.parse(fs.readFileSync(filePath, "utf-8"));
+  } catch {
+    return {};
+  }
+}
+
+export function getChatMode(chatId: string): ChatMode {
+  return readModes()[chatId] ?? "default";
+}
+
+export function setChatMode(chatId: string, mode: ChatMode): void {
+  const modes = readModes();
+  modes[chatId] = mode;
+  fs.writeFileSync(getModesFilePath(), JSON.stringify(modes, null, 2), "utf-8");
+}
+
 export interface StoredMessage {
   role: "user" | "assistant" | "system";
   content: string;

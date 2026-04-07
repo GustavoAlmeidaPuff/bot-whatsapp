@@ -1,5 +1,5 @@
 import { generateResponse } from "./ai";
-import { saveMessage, getWeightedGlobalContext, ContextMessage } from "./storage";
+import { saveMessage, getWeightedGlobalContext, getChatMode, ContextMessage } from "./storage";
 import { config } from "./config";
 import OpenAI from "openai";
 
@@ -27,6 +27,10 @@ export async function processMessage(
 ): Promise<string> {
   // Note: the incoming message is already saved in whatsapp.ts before this is called.
 
+  const chatMode = getChatMode(chatId);
+  const personality = config.personality as any;
+  const modeConfig = chatMode !== "default" ? (personality.modes?.[chatMode] ?? null) : null;
+
   // Build weighted global context across all chats, prioritizing recency and current session.
   const context = getWeightedGlobalContext(chatId, 80);
 
@@ -53,19 +57,26 @@ export async function processMessage(
     config.personality as unknown as Record<string, unknown>
   );
 
+  const systemParts = [
+    systemContent,
+    "",
+    "CONTEXTO DE CONVERSA:",
+    "- Voce recebe o historico completo de mensagens do chat, incluindo mensagens de pessoas que nao estao falando diretamente com voce.",
+    "- Cada mensagem de usuario tem o prefixo 'Nome: mensagem' para indicar quem falou.",
+    "- Mensagens marcadas com [outra conversa] sao de outros chats — use como contexto secundario.",
+    "- As mensagens mais recentes e da sessao atual tem muito mais peso. Priorize-as.",
+    "- Quando alguem perguntar 'o que voce acha sobre isso?' ou similar, analise o que foi discutido recentemente no chat para entender o 'isso'.",
+    "- Se o usuario corrigir um fato, reconheca o erro de forma direta.",
+  ];
+
+  // Inject active mode system prompt — overrides default behavior for this chat
+  if (modeConfig?.system_prompt) {
+    systemParts.push("", "MODO ATIVO: " + (modeConfig.description ?? ""), modeConfig.system_prompt);
+  }
+
   const systemMessage: OpenAI.Chat.Completions.ChatCompletionMessageParam = {
     role: "system",
-    content: [
-      systemContent,
-      "",
-      "CONTEXTO DE CONVERSA:",
-      "- Voce recebe o historico completo de mensagens do chat, incluindo mensagens de pessoas que nao estao falando diretamente com voce.",
-      "- Cada mensagem de usuario tem o prefixo 'Nome: mensagem' para indicar quem falou.",
-      "- Mensagens marcadas com [outra conversa] sao de outros chats — use como contexto secundario.",
-      "- As mensagens mais recentes e da sessao atual tem muito mais peso. Priorize-as.",
-      "- Quando alguem perguntar 'o que voce acha sobre isso?' ou similar, analise o que foi discutido recentemente no chat para entender o 'isso'.",
-      "- Se o usuario corrigir um fato, reconheca o erro de forma direta.",
-    ].join("\n"),
+    content: systemParts.join("\n"),
   };
 
   const aiMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
