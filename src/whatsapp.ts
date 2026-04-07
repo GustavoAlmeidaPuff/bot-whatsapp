@@ -16,9 +16,51 @@ function containsJarvisMention(text: string): boolean {
   return /\bjarvis\b/i.test(text);
 }
 
+function unwrapMessageContent(message: any): any {
+  if (!message) return message;
+  if (message.ephemeralMessage?.message) {
+    return unwrapMessageContent(message.ephemeralMessage.message);
+  }
+  if (message.viewOnceMessageV2?.message) {
+    return unwrapMessageContent(message.viewOnceMessageV2.message);
+  }
+  if (message.viewOnceMessage?.message) {
+    return unwrapMessageContent(message.viewOnceMessage.message);
+  }
+  if (message.documentWithCaptionMessage?.message) {
+    return unwrapMessageContent(message.documentWithCaptionMessage.message);
+  }
+  return message;
+}
+
+function extractMessageText(message: any): string {
+  const content = unwrapMessageContent(message);
+  return (
+    content?.conversation ||
+    content?.extendedTextMessage?.text ||
+    content?.imageMessage?.caption ||
+    content?.videoMessage?.caption ||
+    content?.documentMessage?.caption ||
+    ""
+  );
+}
+
+function extractContextInfo(message: any): any {
+  const content = unwrapMessageContent(message);
+  return (
+    content?.extendedTextMessage?.contextInfo ||
+    content?.imageMessage?.contextInfo ||
+    content?.videoMessage?.contextInfo ||
+    content?.documentMessage?.contextInfo
+  );
+}
+
 function isReplyToBot(msg: any, ownJid: string, isGroup: boolean): boolean {
-  const contextInfo = msg.message?.extendedTextMessage?.contextInfo;
+  const contextInfo = extractContextInfo(msg.message);
   if (!contextInfo?.quotedMessage) return false;
+
+  const quotedText = extractMessageText(contextInfo.quotedMessage);
+  if (quotedText.startsWith("*Jarvis:*")) return true;
 
   // In private chats, participant is usually not set — any reply counts
   if (!isGroup) return true;
@@ -39,14 +81,29 @@ export async function connectWhatsApp() {
     auth: state,
   });
 
-  // Get own JID to filter mirror messages
+  // Keep connection status to avoid sending on closed socket
   let ownJid = "";
-  sock.ev.on("connection.update", (update) => {
-    if (update.connection === "open") {
-      ownJid = sock.user?.id || "";
-      console.log(`📱 Bot JID: ${ownJid}`);
+  let isConnected = false;
+  let reconnectScheduled = false;
+
+  async function safeReact(chatId: string, key: any, text: string) {
+    if (!isConnected) return;
+    try {
+      await sock.relayMessage(
+        chatId,
+        {
+          reactionMessage: {
+            key,
+            text,
+            senderTimestampMs: Date.now(),
+          },
+        },
+        {}
+      );
+    } catch (error) {
+      console.warn("Failed to send reaction:", (error as any)?.message || error);
     }
-  });
+  }
 
   sock.ev.process(async (events) => {
     if (events["creds.update"]) {
@@ -62,6 +119,7 @@ export async function connectWhatsApp() {
       }
 
       if (connection === "close") {
+        isConnected = false;
         const reason = (lastDisconnect?.error as any)?.output?.statusCode;
         const shouldReconnect = reason !== DisconnectReason.loggedOut;
         logger.warn(
@@ -69,12 +127,21 @@ export async function connectWhatsApp() {
         );
 
         if (shouldReconnect) {
-          await connectWhatsApp();
+          if (!reconnectScheduled) {
+            reconnectScheduled = true;
+            setTimeout(() => {
+              void connectWhatsApp();
+            }, 1000);
+          }
         } else {
           console.error("You have been logged out. Delete auth_info/ and scan again.");
           process.exit(1);
         }
       } else if (connection === "open") {
+        isConnected = true;
+        reconnectScheduled = false;
+        ownJid = sock.user?.id || ownJid;
+        console.log(`📱 Bot JID: ${ownJid}`);
         console.log("✅ Jarvis connected to WhatsApp!");
       }
     }
@@ -103,50 +170,46 @@ export async function connectWhatsApp() {
       }
 
       // Extract text
-      const text =
-        msg.message?.conversation ||
-        msg.message?.extendedTextMessage?.text ||
-        msg.message?.imageMessage?.caption ||
-        msg.message?.videoMessage?.caption ||
-        "";
+      const text = extractMessageText(msg.message);
 
       if (!text) return;
 
       const isGroup = chatId.includes("@g.us");
-      if (!containsJarvisMention(text) && !isReplyToBot(msg, ownJid, isGroup)) return;
+      const hasMention = containsJarvisMention(text);
+      const repliedToBot = isReplyToBot(msg, ownJid, isGroup);
+      if (!hasMention && !repliedToBot) return;
 
       console.log(
-        `[${isGroup ? "GROUP" : "PRIVATE"}] ${senderId}: ${text}`
+        `[${isGroup ? "GROUP" : "PRIVATE"}] ${senderId}: ${text} (mention=${hasMention}, replyToBot=${repliedToBot})`
       );
 
       try {
         // React with hourglass while thinking
-        await sock.relayMessage(chatId, {
-          reactionMessage: {
-            key: msg.key,
-            text: "\u231B",
-            senderTimestampMs: Date.now(),
-          },
-        }, {});
+        await safeReact(chatId, msg.key, "\u231B");
 
         const reply = await processMessage(chatId, senderId, text);
 
-        // Remove reaction and send reply
-        await sock.relayMessage(chatId, {
-          reactionMessage: {
-            key: msg.key,
-            text: "",
-            senderTimestampMs: Date.now(),
-          },
-        }, {});
+        if (!isConnected) {
+          console.warn("Skipping reply because socket is disconnected.");
+          return;
+        }
 
         await sock.sendMessage(chatId, { text: `*Jarvis:*\n\n${reply}` });
         console.log(`Jarvis: ${reply}`);
       } catch (error) {
         console.error("Error processing message:", error);
-        await sock.sendMessage(chatId, {
-          text: "Oops, something went wrong. Try again later.",
-        });
+        if (isConnected) {
+          try {
+            await sock.sendMessage(chatId, {
+              text: "Oops, something went wrong. Try again later.",
+            });
+          } catch (sendError) {
+            console.warn("Failed to send error message:", (sendError as any)?.message || sendError);
+          }
+        }
+      } finally {
+        // Always remove loading reaction when processing finishes
+        await safeReact(chatId, msg.key, "");
       }
     }
   });

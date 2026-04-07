@@ -5,9 +5,9 @@ import path from "path";
 dotenv.config();
 
 export const config = {
-  openRouterApiKey: process.env.OPENROUTER_API_KEY || "",
-  openRouterBaseUrl: "https://openrouter.ai/api/v1",
-  model: "nvidia/nemotron-3-super-120b-a12b:free",
+  geminiApiKey: process.env.GEMINI_API_KEY || process.env.OPENROUTER_API_KEY || "",
+  geminiBaseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
+  model: "gemini-3-flash-preview",
   dataDir: path.resolve("data"),
   chatsDir: path.resolve("data", "chats"),
   authDir: path.resolve("auth_info"),

@@ -2,8 +2,8 @@ import OpenAI from "openai";
 import { config } from "./config";
 
 const openai = new OpenAI({
-  apiKey: config.openRouterApiKey,
-  baseURL: config.openRouterBaseUrl,
+  apiKey: config.geminiApiKey,
+  baseURL: config.geminiBaseUrl,
   defaultHeaders: {
     "HTTP-Referer": "https://github.com/jarvis-whatsapp",
     "X-Title": "Jarvis WhatsApp Bot",
@@ -24,7 +24,16 @@ export async function generateResponse(
         temperature: 0.7,
       });
 
-      const content = response.choices?.[0]?.message?.content?.trim();
+      const rawContent = response.choices?.[0]?.message?.content;
+      const content = (() => {
+        if (typeof rawContent === "string") return rawContent.trim();
+        if (!Array.isArray(rawContent)) return "";
+        const parts = rawContent as Array<{ text?: string }>;
+        return parts
+          .map((part) => (typeof part?.text === "string" ? part.text : ""))
+          .join("")
+          .trim();
+      })();
       if (!content) {
         console.warn("AI returned empty response, full body:", JSON.stringify(response, null, 2).slice(0, 500));
         return "...";
