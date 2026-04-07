@@ -9,7 +9,7 @@ import pino from "pino";
 import qrcode from "qrcode-terminal";
 import { config } from "./config";
 import { processMessage } from "./brain";
-import { isRateLimitError } from "./ai";
+import { isRateLimitError, isTransientApiError } from "./ai";
 
 const logger = pino({ level: "silent" });
 let currentSocketToken = 0;
@@ -219,6 +219,8 @@ export async function connectWhatsApp() {
       } catch (error) {
         if (isRateLimitError(error)) {
           console.warn("AI rate limited after retries.");
+        } else if (isTransientApiError(error)) {
+          console.warn("AI provider temporarily unavailable after retries.");
         } else {
           console.error("Error processing message:", error);
         }
@@ -226,7 +228,9 @@ export async function connectWhatsApp() {
           try {
             await sock.sendMessage(chatId, {
               text: isRateLimitError(error)
-                ? "Tô com muito acesso agora, tenta de novo em alguns segundos."
+                ? "Foi mal, eu que falhei agora por limite da API. Tenta de novo em alguns segundos que eu respondo direito."
+                : isTransientApiError(error)
+                ? "Foi mal, o servidor da IA ficou instavel agora. Tenta de novo em alguns segundos."
                 : "Oops, something went wrong. Try again later.",
             });
           } catch (sendError) {

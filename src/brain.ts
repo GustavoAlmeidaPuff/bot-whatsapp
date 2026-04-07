@@ -1,5 +1,5 @@
 import { generateResponse } from "./ai";
-import { saveMessage, getRecentMessages, StoredMessage } from "./storage";
+import { saveMessage, getWeightedGlobalContext, ContextMessage } from "./storage";
 import { config } from "./config";
 import OpenAI from "openai";
 
@@ -33,11 +33,15 @@ export async function processMessage(
     timestamp: new Date().toISOString(),
   });
 
-  // Get recent context
-  const history = getRecentMessages(chatId, 30).map(
-    (msg: StoredMessage): OpenAI.Chat.Completions.ChatCompletionMessageParam => ({
+  // Build weighted global context across all chats, prioritizing recency and current session.
+  const context = getWeightedGlobalContext(chatId, 60);
+  const history = context.map(
+    (msg: ContextMessage): OpenAI.Chat.Completions.ChatCompletionMessageParam => ({
       role: msg.role as "user" | "assistant" | "system",
-      content: msg.content,
+      content:
+        msg.chatId === chatId
+          ? msg.content
+          : `[contexto de outra conversa: ${msg.chatId}] ${msg.content}`,
     })
   );
 
@@ -48,7 +52,14 @@ export async function processMessage(
 
   const systemMessage: OpenAI.Chat.Completions.ChatCompletionMessageParam = {
     role: "system",
-    content: systemContent,
+    content: [
+      systemContent,
+      "",
+      "MEMORIA E CONTEXTO:",
+      "- Considere mensagens de outras conversas como contexto adicional.",
+      "- Priorize com muito mais peso as mensagens mais recentes e a sessao atual da conversa.",
+      "- Se o usuario corrigir um fato, reconheca o erro de forma direta.",
+    ].join("\n"),
   };
 
   const aiMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [

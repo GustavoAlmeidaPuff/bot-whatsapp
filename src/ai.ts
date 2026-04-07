@@ -14,9 +14,14 @@ export function isRateLimitError(err: unknown): boolean {
   return (err as any)?.status === 429;
 }
 
+export function isTransientApiError(err: unknown): boolean {
+  const status = (err as any)?.status;
+  return status === 408 || status === 409 || status === 425 || status === 502 || status === 503 || status === 504;
+}
+
 export async function generateResponse(
   messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[],
-  retries = 5,
+  retries = 6,
   delayMs = 1000
 ): Promise<string> {
   for (let attempt = 1; attempt <= retries; attempt++) {
@@ -44,14 +49,15 @@ export async function generateResponse(
       }
       return content;
     } catch (err: any) {
-      if (isRateLimitError(err) && attempt < retries) {
+      if ((isRateLimitError(err) || isTransientApiError(err)) && attempt < retries) {
         const resetHeader = err?.headers?.get?.("x-ratelimit-reset");
         const exponentialBackoff = delayMs * Math.pow(2, attempt - 1);
-        const jitterMs = Math.floor(Math.random() * 500);
+        const jitterMs = Math.floor(Math.random() * 700);
         const waitMs = resetHeader
           ? Math.max(Number(resetHeader) - Date.now(), 0) + 500
           : exponentialBackoff + jitterMs;
-        console.warn(`Rate limited. Retrying in ${(waitMs / 1000).toFixed(1)}s... (attempt ${attempt}/${retries})`);
+        const kind = isRateLimitError(err) ? "Rate limited" : `Transient API error (${err?.status ?? "unknown"})`;
+        console.warn(`${kind}. Retrying in ${(waitMs / 1000).toFixed(1)}s... (attempt ${attempt}/${retries})`);
         await new Promise((res) => setTimeout(res, waitMs));
         continue;
       }
