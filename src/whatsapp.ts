@@ -242,7 +242,7 @@ export async function connectWhatsApp() {
       // ── Static commands ────────────────────────────────────────────────────
       const normalizedText = text.toLowerCase().trim();
 
-      if (normalizedText.includes("jarvis, ligar aura")) {
+      if (/jarvis[,\s]+ligar\s+aura/i.test(text)) {
         const spotifyUrl = "https://open.spotify.com/intl-pt/track/6DvGOGRRjhURCE7weXWV3x?si=9c564f36c08f4ae6";
         const jpegThumbnail = await fetchBuffer("https://i.scdn.co/image/ab67616d0000b2734096fd5e8f501c024a70c642").catch(() => undefined);
         await sock.sendMessage(chatId, {
