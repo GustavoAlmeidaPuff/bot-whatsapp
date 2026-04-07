@@ -6,6 +6,7 @@ export interface StoredMessage {
   role: "user" | "assistant" | "system";
   content: string;
   from: string;
+  senderName?: string;
   timestamp: string;
 }
 
@@ -79,13 +80,13 @@ function readChatMessagesWithMeta(chatId: string): ContextMessage[] {
     }))
     .sort((a, b) => a.timestampMs - b.timestampMs);
 
-  // Conversation session segmentation by natural pauses.
-  // We use soft windows (long pause = likely another topic/session).
+  // Segment messages into conversation sessions based on time gaps.
+  // A gap of 1h+ likely signals a new conversation topic/session.
   let sessionId = 0;
   for (let i = 0; i < raw.length; i++) {
     if (i > 0) {
       const gapMs = raw[i].timestampMs - raw[i - 1].timestampMs;
-      if (gapMs > 2 * 60 * 60 * 1000) sessionId += 1; // 2h+ likely another session
+      if (gapMs > 60 * 60 * 1000) sessionId += 1; // 1h+ = new session
     }
     raw[i].sessionId = sessionId;
   }
@@ -110,24 +111,27 @@ function scoreMessage(
   const ageMs = Math.max(nowMs - msg.timestampMs, 0);
   const ageMin = ageMs / (60 * 1000);
 
+  // Recency score: steeply decays the older the message gets
   let score = 0;
-  if (ageMin <= 10) score += 10;
-  else if (ageMin <= 30) score += 8;
-  else if (ageMin <= 90) score += 6;
-  else if (ageMin <= 180) score += 4;
-  else if (ageMin <= 720) score += 2;
-  else score += 1;
+  if (ageMin <= 5) score += 20;
+  else if (ageMin <= 15) score += 15;
+  else if (ageMin <= 30) score += 10;
+  else if (ageMin <= 60) score += 6;
+  else if (ageMin <= 180) score += 3;
+  else if (ageMin <= 720) score += 1.5;
+  else score += 0.5;
 
-  if (msg.chatId === currentChatId) score += 5;
-  if (msg.chatId === currentChatId && msg.sessionId === currentSessionId) score += 4;
-  if (msg.role === "assistant") score += 0.5;
+  // Strong bonus for being in the current chat
+  if (msg.chatId === currentChatId) score += 8;
+  // Extra bonus for being in the current session of the current chat
+  if (msg.chatId === currentChatId && msg.sessionId === currentSessionId) score += 10;
 
   return score;
 }
 
 export function getWeightedGlobalContext(
   currentChatId: string,
-  totalLimit = 60
+  totalLimit = 80
 ): ContextMessage[] {
   const nowMs = Date.now();
   const currentChatMessages = readChatMessagesWithMeta(currentChatId);
@@ -138,11 +142,12 @@ export function getWeightedGlobalContext(
   const allMessages = allChatIds.flatMap((chatId) => readChatMessagesWithMeta(chatId));
   if (allMessages.length === 0) return [];
 
-  // Preserve strong local continuity from current chat.
-  const localStrong = currentChatMessages.slice(-28);
-  const selectedKeys = new Set(localStrong.map((m) => `${m.chatId}:${m.timestamp}:${m.from}:${m.content}`));
+  // Always include ALL messages from the current session (the ongoing conversation).
+  // This ensures Jarvis has full context of what's being discussed right now.
+  const currentSession = currentChatMessages.filter((m) => m.sessionId === currentSessionId);
+  const selectedKeys = new Set(currentSession.map((m) => `${m.chatId}:${m.timestamp}:${m.from}:${m.content}`));
 
-  const remainingSlots = Math.max(totalLimit - localStrong.length, 0);
+  const remainingSlots = Math.max(totalLimit - currentSession.length, 0);
   const globalRanked = allMessages
     .filter((m) => !selectedKeys.has(`${m.chatId}:${m.timestamp}:${m.from}:${m.content}`))
     .map((m) => ({
@@ -154,5 +159,5 @@ export function getWeightedGlobalContext(
     .map((x) => x.msg);
 
   // Final ordering by time to keep coherent conversational flow.
-  return [...localStrong, ...globalRanked].sort((a, b) => a.timestampMs - b.timestampMs);
+  return [...currentSession, ...globalRanked].sort((a, b) => a.timestampMs - b.timestampMs);
 }

@@ -9,6 +9,7 @@ import pino from "pino";
 import qrcode from "qrcode-terminal";
 import { config } from "./config";
 import { processMessage } from "./brain";
+import { saveMessage } from "./storage";
 import { isRateLimitError, isTransientApiError } from "./ai";
 
 const logger = pino({ level: "silent" });
@@ -71,16 +72,11 @@ function isReplyToBot(msg: any, ownJid: string, isGroup: boolean): boolean {
   const contextInfo = extractContextInfo(msg.message);
   if (!contextInfo?.quotedMessage) return false;
 
+  // Only treat as a reply to Jarvis if the quoted message has the bot's signature.
+  // This prevents triggering when someone replies to a message manually sent by the operator
+  // from the same number — those messages won't have the "*Jarvis:*" prefix.
   const quotedText = extractMessageText(contextInfo.quotedMessage);
-  if (quotedText.startsWith("*Jarvis:*")) return true;
-
-  // In private chats, participant is usually not set — any reply counts
-  if (!isGroup) return true;
-
-  // In groups, check that the quoted message was sent by the bot
-  const ownNumber = ownJid.split("@")[0].split(":")[0];
-  const quotedNumber = (contextInfo.participant || "").split("@")[0].split(":")[0];
-  return ownNumber !== "" && ownNumber === quotedNumber;
+  return quotedText.startsWith("*Jarvis:*");
 }
 
 export async function connectWhatsApp() {
@@ -193,6 +189,18 @@ export async function connectWhatsApp() {
       const text = extractMessageText(msg.message);
 
       if (!text) return;
+
+      const senderName: string = (msg as any).pushName || senderId.split("@")[0];
+
+      // Save every message to storage so Jarvis has full conversation context,
+      // even for messages not directed at him.
+      saveMessage(chatId, {
+        role: "user",
+        content: text,
+        from: senderId,
+        senderName,
+        timestamp: new Date().toISOString(),
+      });
 
       const isGroup = chatId.includes("@g.us");
       const hasMention = containsJarvisMention(text);

@@ -25,24 +25,27 @@ export async function processMessage(
   senderId: string,
   text: string
 ): Promise<string> {
-  // Save incoming message
-  saveMessage(chatId, {
-    role: "user",
-    content: text,
-    from: senderId,
-    timestamp: new Date().toISOString(),
-  });
+  // Note: the incoming message is already saved in whatsapp.ts before this is called.
 
   // Build weighted global context across all chats, prioritizing recency and current session.
-  const context = getWeightedGlobalContext(chatId, 60);
+  const context = getWeightedGlobalContext(chatId, 80);
+
+  // Format each message so the AI knows who said what.
+  // For assistant messages, keep content as-is (already attributed to Jarvis).
+  // For user messages, prefix with the sender's name so the AI understands the conversation.
   const history = context.map(
-    (msg: ContextMessage): OpenAI.Chat.Completions.ChatCompletionMessageParam => ({
-      role: msg.role as "user" | "assistant" | "system",
-      content:
-        msg.chatId === chatId
-          ? msg.content
-          : `[contexto de outra conversa: ${msg.chatId}] ${msg.content}`,
-    })
+    (msg: ContextMessage): OpenAI.Chat.Completions.ChatCompletionMessageParam => {
+      if (msg.role === "assistant") {
+        return { role: "assistant", content: msg.content };
+      }
+
+      const label = (msg as any).senderName || msg.from.split("@")[0];
+      const prefix = msg.chatId !== chatId ? `[outra conversa] ` : "";
+      return {
+        role: "user",
+        content: `${prefix}${label}: ${msg.content}`,
+      };
+    }
   );
 
   // Build messages for AI
@@ -55,9 +58,12 @@ export async function processMessage(
     content: [
       systemContent,
       "",
-      "MEMORIA E CONTEXTO:",
-      "- Considere mensagens de outras conversas como contexto adicional.",
-      "- Priorize com muito mais peso as mensagens mais recentes e a sessao atual da conversa.",
+      "CONTEXTO DE CONVERSA:",
+      "- Voce recebe o historico completo de mensagens do chat, incluindo mensagens de pessoas que nao estao falando diretamente com voce.",
+      "- Cada mensagem de usuario tem o prefixo 'Nome: mensagem' para indicar quem falou.",
+      "- Mensagens marcadas com [outra conversa] sao de outros chats — use como contexto secundario.",
+      "- As mensagens mais recentes e da sessao atual tem muito mais peso. Priorize-as.",
+      "- Quando alguem perguntar 'o que voce acha sobre isso?' ou similar, analise o que foi discutido recentemente no chat para entender o 'isso'.",
       "- Se o usuario corrigir um fato, reconheca o erro de forma direta.",
     ].join("\n"),
   };
