@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "Bash(npm init:*)",
+      "Bash(npm install:*)",
+      "Bash(node -e \"const { OpenAI } = require\\(''openai''\\); console.log\\(typeof OpenAI, Object.keys\\(OpenAI.prototype || OpenAI\\)\\)\")",
+      "Bash(node -e \"const sdk = require\\(''openai''\\); console.log\\(Object.keys\\(sdk\\)\\)\")",
+      "Bash(npx tsc:*)",
+      "Bash(node -e \"const baileys = require\\(''@whiskeysockets/baileys''\\); console.log\\(Object.keys\\(baileys\\).filter\\(k => k.toLowerCase\\(\\).includes\\(''qr''\\) || k.toLowerCase\\(\\).includes\\(''qr-code''\\)\\).join\\(''\\\\n''\\)\\)\")",
+      "Bash(node -e \"const baileys = require\\(''''@whiskeysockets/baileys''''\\); console.log\\(Object.keys\\(baileys\\).join\\(''''\\\\n''''\\)\\)\")",
+      "Bash(node -e \"const baileys = require\\(''@whiskeysockets/baileys''\\); console.log\\(Object.keys\\(baileys\\).filter\\(k => k.toLowerCase\\(\\).includes\\(''qr''\\)\\).join\\(''\\\\n''\\)\\)\")"
+    ]
+  }
+}
