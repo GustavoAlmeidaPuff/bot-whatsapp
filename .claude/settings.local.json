@@ -8,7 +8,9 @@
       "Bash(npm start:*)",
       "Bash(echo \"EXIT: $?\")",
       "Bash(npm install:*)",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "Bash(node -e \"JSON.parse\\(require\\(''fs''\\).readFileSync\\(''src/personality.json'',''utf-8''\\)\\); console.log\\(''JSON válido''\\);\")",
+      "Bash(node -e \"JSON.parse\\(require\\(''fs''\\).readFileSync\\(''src/personality.json'',''utf-8''\\)\\); console.log\\(''ok''\\);\")"
     ]
   }
 }
