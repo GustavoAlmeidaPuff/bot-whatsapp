@@ -4,7 +4,10 @@
       "Bash(git init:*)",
       "Bash(git remote:*)",
       "Bash(git fetch:*)",
-      "Bash(node -e \"JSON.parse\\(require\\(''fs''\\).readFileSync\\(''C:/Users/gualm/OneDrive/Documentos/code/jarvis-whatsapp/src/personality.json'', ''utf-8''\\)\\); console.log\\(''JSON válido''\\)\")"
+      "Bash(node -e \"JSON.parse\\(require\\(''fs''\\).readFileSync\\(''C:/Users/gualm/OneDrive/Documentos/code/jarvis-whatsapp/src/personality.json'', ''utf-8''\\)\\); console.log\\(''JSON válido''\\)\")",
+      "Bash(npm start:*)",
+      "Bash(echo \"EXIT: $?\")",
+      "Bash(npm install:*)"
     ]
   }
 }

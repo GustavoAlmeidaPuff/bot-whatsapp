@@ -13,7 +13,7 @@ const openai = new OpenAI({
 export async function generateResponse(
   messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[],
   retries = 3,
-  delayMs = 5000
+  delayMs = 1000
 ): Promise<string> {
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
@@ -32,8 +32,12 @@ export async function generateResponse(
       return content;
     } catch (err: any) {
       if (err?.status === 429 && attempt < retries) {
-        console.warn(`Rate limited. Retrying in ${delayMs / 1000}s... (attempt ${attempt}/${retries})`);
-        await new Promise((res) => setTimeout(res, delayMs * attempt));
+        const resetHeader = err?.headers?.get?.("x-ratelimit-reset");
+        const waitMs = resetHeader
+          ? Math.max(Number(resetHeader) - Date.now(), 0) + 500
+          : delayMs * attempt;
+        console.warn(`Rate limited. Retrying in ${(waitMs / 1000).toFixed(1)}s... (attempt ${attempt}/${retries})`);
+        await new Promise((res) => setTimeout(res, waitMs));
         continue;
       }
       throw err;

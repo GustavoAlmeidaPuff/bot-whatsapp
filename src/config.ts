@@ -7,7 +7,7 @@ dotenv.config();
 export const config = {
   openRouterApiKey: process.env.OPENROUTER_API_KEY || "",
   openRouterBaseUrl: "https://openrouter.ai/api/v1",
-  model: "qwen/qwen3.6-plus:free",
+  model: "nvidia/nemotron-3-super-120b-a12b:free",
   dataDir: path.resolve("data"),
   chatsDir: path.resolve("data", "chats"),
   authDir: path.resolve("auth_info"),
