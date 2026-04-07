@@ -227,10 +227,18 @@ export async function connectWhatsApp() {
         `[${isGroup ? "GROUP" : "PRIVATE"}] ${senderId}: ${text} (mention=${hasMention}, replyToBot=${repliedToBot})`
       );
 
+      // ── Static commands ────────────────────────────────────────────────────
+      const normalizedText = text.toLowerCase().trim();
+
+      if (normalizedText.includes("jarvis, ligar aura")) {
+        await sock.sendMessage(chatId, { text: "https://open.spotify.com/intl-pt/track/6DvGOGRRjhURCE7weXWV3x?si=9c564f36c08f4ae6" });
+        return;
+      }
+      // ───────────────────────────────────────────────────────────────────────
+
       // ── Mode switching ──────────────────────────────────────────────────────
       const personality = config.personality as any;
       const modes = personality.modes ?? {};
-      const normalizedText = text.toLowerCase().trim();
 
       let modeCommandHandled = false;
       for (const [modeName, modeDef] of Object.entries(modes) as [string, any][]) {

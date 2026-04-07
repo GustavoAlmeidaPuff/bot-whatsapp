@@ -122,14 +122,6 @@ function readChatMessagesWithMeta(chatId: string): ContextMessage[] {
   return raw;
 }
 
-function listAllChatIds(): string[] {
-  if (!fs.existsSync(config.chatsDir)) return [];
-  return fs
-    .readdirSync(config.chatsDir)
-    .filter((name) => name.endsWith(".jsonl"))
-    .map((name) => name.replace(/\.jsonl$/, ""));
-}
-
 function scoreMessage(
   msg: ContextMessage,
   nowMs: number,
@@ -163,29 +155,22 @@ export function getWeightedGlobalContext(
 ): ContextMessage[] {
   const nowMs = Date.now();
   const currentChatMessages = readChatMessagesWithMeta(currentChatId);
-  const currentSessionId =
-    currentChatMessages.length > 0 ? currentChatMessages[currentChatMessages.length - 1].sessionId : 0;
+  if (currentChatMessages.length === 0) return [];
 
-  const allChatIds = listAllChatIds();
-  const allMessages = allChatIds.flatMap((chatId) => readChatMessagesWithMeta(chatId));
-  if (allMessages.length === 0) return [];
+  const currentSessionId = currentChatMessages[currentChatMessages.length - 1].sessionId;
 
-  // Always include ALL messages from the current session (the ongoing conversation).
-  // This ensures Jarvis has full context of what's being discussed right now.
+  // Always include ALL messages from the current session first.
   const currentSession = currentChatMessages.filter((m) => m.sessionId === currentSessionId);
-  const selectedKeys = new Set(currentSession.map((m) => `${m.chatId}:${m.timestamp}:${m.from}:${m.content}`));
+  const selectedKeys = new Set(currentSession.map((m) => `${m.timestamp}:${m.from}:${m.content}`));
 
+  // Fill remaining slots with older messages from the same chat only.
   const remainingSlots = Math.max(totalLimit - currentSession.length, 0);
-  const globalRanked = allMessages
-    .filter((m) => !selectedKeys.has(`${m.chatId}:${m.timestamp}:${m.from}:${m.content}`))
-    .map((m) => ({
-      msg: m,
-      score: scoreMessage(m, nowMs, currentChatId, currentSessionId),
-    }))
+  const olderMessages = currentChatMessages
+    .filter((m) => m.sessionId !== currentSessionId && !selectedKeys.has(`${m.timestamp}:${m.from}:${m.content}`))
+    .map((m) => ({ msg: m, score: scoreMessage(m, nowMs, currentChatId, currentSessionId) }))
     .sort((a, b) => b.score - a.score || b.msg.timestampMs - a.msg.timestampMs)
     .slice(0, remainingSlots)
     .map((x) => x.msg);
 
-  // Final ordering by time to keep coherent conversational flow.
-  return [...currentSession, ...globalRanked].sort((a, b) => a.timestampMs - b.timestampMs);
+  return [...currentSession, ...olderMessages].sort((a, b) => a.timestampMs - b.timestampMs);
 }

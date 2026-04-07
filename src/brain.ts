@@ -44,10 +44,9 @@ export async function processMessage(
       }
 
       const label = (msg as any).senderName || msg.from.split("@")[0];
-      const prefix = msg.chatId !== chatId ? `[outra conversa] ` : "";
       return {
         role: "user",
-        content: `${prefix}${label}: ${msg.content}`,
+        content: `${label}: ${msg.content}`,
       };
     }
   );
@@ -61,9 +60,8 @@ export async function processMessage(
     systemContent,
     "",
     "CONTEXTO DE CONVERSA:",
-    "- Voce recebe o historico completo de mensagens do chat, incluindo mensagens de pessoas que nao estao falando diretamente com voce.",
+    "- Voce recebe o historico completo de mensagens deste chat, incluindo mensagens de pessoas que nao estao falando diretamente com voce.",
     "- Cada mensagem de usuario tem o prefixo 'Nome: mensagem' para indicar quem falou.",
-    "- Mensagens marcadas com [outra conversa] sao de outros chats — use como contexto secundario.",
     "- As mensagens mais recentes e da sessao atual tem muito mais peso. Priorize-as.",
     "- Quando alguem perguntar 'o que voce acha sobre isso?' ou similar, analise o que foi discutido recentemente no chat para entender o 'isso'.",
     "- Se o usuario corrigir um fato, reconheca o erro de forma direta.",
