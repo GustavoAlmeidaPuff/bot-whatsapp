@@ -11,6 +11,17 @@ import { config } from "./config";
 import { processMessage } from "./brain";
 
 const logger = pino({ level: "silent" });
+let currentSocketToken = 0;
+let reconnectTimer: NodeJS.Timeout | null = null;
+
+function scheduleReconnect(expectedToken: number) {
+  if (reconnectTimer) return;
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null;
+    if (expectedToken !== currentSocketToken) return;
+    void connectWhatsApp();
+  }, 1500);
+}
 
 function containsJarvisMention(text: string): boolean {
   return /\bjarvis\b/i.test(text);
@@ -72,6 +83,7 @@ function isReplyToBot(msg: any, ownJid: string, isGroup: boolean): boolean {
 }
 
 export async function connectWhatsApp() {
+  const socketToken = ++currentSocketToken;
   const { state, saveCreds } = await useMultiFileAuthState(config.authDir);
   const { version } = await fetchLatestBaileysVersion();
 
@@ -84,7 +96,7 @@ export async function connectWhatsApp() {
   // Keep connection status to avoid sending on closed socket
   let ownJid = "";
   let isConnected = false;
-  let reconnectScheduled = false;
+  let hasAnnouncedOpen = false;
 
   async function safeReact(chatId: string, key: any, text: string) {
     if (!isConnected) return;
@@ -106,6 +118,8 @@ export async function connectWhatsApp() {
   }
 
   sock.ev.process(async (events) => {
+    if (socketToken !== currentSocketToken) return;
+
     if (events["creds.update"]) {
       await saveCreds();
     }
@@ -120,29 +134,34 @@ export async function connectWhatsApp() {
 
       if (connection === "close") {
         isConnected = false;
+        hasAnnouncedOpen = false;
         const reason = (lastDisconnect?.error as any)?.output?.statusCode;
-        const shouldReconnect = reason !== DisconnectReason.loggedOut;
-        logger.warn(
-          `Connection closed due to: ${reason}, reconnecting: ${shouldReconnect}`
-        );
+        const isSessionConflict =
+          reason === DisconnectReason.connectionReplaced ||
+          reason === DisconnectReason.multideviceMismatch ||
+          reason === 440;
+        const shouldReconnect = reason !== DisconnectReason.loggedOut && !isSessionConflict;
+        console.warn(`Connection closed due to: ${reason}, reconnecting: ${shouldReconnect}`);
 
         if (shouldReconnect) {
-          if (!reconnectScheduled) {
-            reconnectScheduled = true;
-            setTimeout(() => {
-              void connectWhatsApp();
-            }, 1000);
-          }
+          scheduleReconnect(socketToken);
+        } else if (isSessionConflict) {
+          console.error(
+            "Sessao WhatsApp em conflito (codigo 440). Feche outras conexoes e refaca o pareamento apagando auth_info."
+          );
+          process.exit(1);
         } else {
           console.error("You have been logged out. Delete auth_info/ and scan again.");
           process.exit(1);
         }
       } else if (connection === "open") {
         isConnected = true;
-        reconnectScheduled = false;
         ownJid = sock.user?.id || ownJid;
-        console.log(`📱 Bot JID: ${ownJid}`);
-        console.log("✅ Jarvis connected to WhatsApp!");
+        if (!hasAnnouncedOpen) {
+          hasAnnouncedOpen = true;
+          console.log(`📱 Bot JID: ${ownJid}`);
+          console.log("✅ Jarvis connected to WhatsApp!");
+        }
       }
     }
 
