@@ -1,5 +1,12 @@
 import { config, ensureDirs } from "./config";
 
+// Suppress noisy Baileys internal session logs
+const _origLog = console.log.bind(console);
+console.log = (...args: any[]) => {
+  if (typeof args[0] === "string" && args[0].startsWith("Closing session:")) return;
+  _origLog(...args);
+};
+
 async function main() {
   if (!config.openRouterApiKey) {
     console.error("⚠️  OPENROUTER_API_KEY not set in .env file");
