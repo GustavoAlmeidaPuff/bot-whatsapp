@@ -3,6 +3,23 @@ import { saveMessage, getRecentMessages, StoredMessage } from "./storage";
 import { config } from "./config";
 import OpenAI from "openai";
 
+function buildPersonalitySystemContent(personality: Record<string, unknown>): string {
+  const p = personality as any;
+  const fullPersonalityJson = JSON.stringify(personality, null, 2);
+
+  return [
+    String(p.system_prompt || ""),
+    "",
+    "REGRAS DE EXECUCAO:",
+    "- Use TODO o JSON de personalidade abaixo como fonte de verdade.",
+    "- Se houver conflito entre regras, priorize system_prompt + what_NOT_to_do + what_to_DO.",
+    "- Nao ignore campos de idioma, estilo, exemplos, reacoes e valores centrais.",
+    "",
+    "PERSONALIDADE_COMPLETA_JSON:",
+    fullPersonalityJson,
+  ].join("\n");
+}
+
 export async function processMessage(
   chatId: string,
   senderId: string,
@@ -25,15 +42,9 @@ export async function processMessage(
   );
 
   // Build messages for AI
-  const p = config.personality as any;
-  const systemContent = [
-    p.system_prompt,
-    `\nGÍRIAS QUE VOCÊ USA: ${p.speech_patterns?.casual?.join(", ")}`,
-    `\nRISADAS: discreta="${p.speech_patterns?.laughs?.discrete}", forte="${p.speech_patterns?.laughs?.strong}", sarcástica="${p.speech_patterns?.laughs?.sarcastic}"`,
-    `\nO QUE NÃO FAZER:\n${p.what_NOT_to_do?.map((x: string) => `- ${x}`).join("\n")}`,
-    `\nO QUE FAZER:\n${p.what_to_DO?.map((x: string) => `- ${x}`).join("\n")}`,
-    `\nEXEMPLOS DE RESPOSTAS BOAS:\n${Object.values(p.examples_of_good_responses ?? {}).map((ex: any) => `user: "${ex.user}" → bot: "${ex.bot}"`).join("\n")}`,
-  ].join("\n");
+  const systemContent = buildPersonalitySystemContent(
+    config.personality as unknown as Record<string, unknown>
+  );
 
   const systemMessage: OpenAI.Chat.Completions.ChatCompletionMessageParam = {
     role: "system",
